@@ -120,3 +120,6 @@ coverage.xml
 *.temp
 solana-cli.tar.bz2
 solana-release.tar.bz2
+solana-release/
+solana-cli-extracted/
+deploy_output.txt

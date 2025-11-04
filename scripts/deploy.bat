@@ -85,18 +85,19 @@ if not exist "%KEYPAIR_PATH%" (
     echo [OK] Keypair found at %KEYPAIR_PATH%
 )
 
-REM Set Solana config
+REM Set Solana config using extracted Solana CLI directly
 echo [CONFIG] Configuring Solana CLI...
-wsl sh -c "solana config set --keypair /mnt/c/Users/stant/.config/solana/id.json"
+set "SOLANA_BIN=%CD%\solana-release\bin"
+%SOLANA_BIN%\solana.exe config set --keypair "%KEYPAIR_PATH%"
 
 if "%NETWORK%"=="devnet" (
-    wsl sh -c "solana config set --url https://api.devnet.solana.com"
+    %SOLANA_BIN%\solana.exe config set --url https://api.devnet.solana.com
     echo [AIRDROP] Airdropping SOL for deployment devnet only...
-    wsl sh -c "solana airdrop 2 --commitment finalized" 2>nul && echo [OK] Airdrop successful || echo [WARNING] Airdrop may have failed, continuing...
+    %SOLANA_BIN%\solana.exe airdrop 2 --commitment finalized 2>nul && echo [OK] Airdrop successful || echo [WARNING] Airdrop may have failed, continuing...
 ) else if "%NETWORK%"=="testnet" (
-    wsl sh -c "solana config set --url https://api.testnet.solana.com"
+    %SOLANA_BIN%\solana.exe config set --url https://api.testnet.solana.com
 ) else if "%NETWORK%"=="mainnet" (
-    wsl sh -c "solana config set --url https://api.mainnet-beta.solana.com"
+    %SOLANA_BIN%\solana.exe config set --url https://api.mainnet-beta.solana.com
     echo [WARNING] DEPLOYING TO MAINNET! Make sure you have enough SOL for deployment.
 ) else (
     echo [ERROR] Invalid network: %NETWORK%. Use 'devnet', 'testnet', or 'mainnet'
@@ -104,12 +105,13 @@ if "%NETWORK%"=="devnet" (
 )
 
 REM Check balance
-for /f "tokens=*" %%a in ('wsl sh -c "solana balance --commitment finalized" 2^>nul') do set BALANCE=%%a
+echo [BALANCE] Checking wallet balance...
+for /f "tokens=*" %%a in ('%SOLANA_BIN%\solana.exe balance --commitment finalized 2^>nul') do set BALANCE=%%a
 echo [BALANCE] Wallet balance: %BALANCE% SOL
 
 REM Deploy the program
 echo [DEPLOY] Deploying program...
-for /f "tokens=*" %%a in ('wsl sh -c "cd /mnt/c/Users/stant/source/perps && solana program deploy target/deploy/simple_perps.so --commitment finalized --output json" 2^>nul') do set DEPLOY_OUTPUT=%%a
+for /f "tokens=*" %%a in ('%SOLANA_BIN%\solana.exe program deploy target/deploy/simple_perps.so --commitment finalized --output json 2^>nul') do set DEPLOY_OUTPUT=%%a
 
 REM Extract Program ID (simplified - in practice you'd use a JSON parser)
 echo %DEPLOY_OUTPUT% | findstr /C:"programId" >nul
