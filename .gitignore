@@ -118,3 +118,5 @@ coverage.xml
 # Temporary files
 *.tmp
 *.temp
+solana-cli.tar.bz2
+solana-release.tar.bz2

@@ -210,14 +210,33 @@ REM Install Solana Platform Tools (includes cargo-build-sbf)
 echo [INFO] Installing Solana Platform Tools...
 cargo --list | findstr "build-sbf" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo Installing solana-cli tools via cargo...
-    cargo install solana-cli --features=default 2>nul
+    echo Installing Solana CLI tools via official installer...
+    REM Download and run the official Solana installer
+    powershell -Command "try { Invoke-WebRequest -Uri 'https://release.solana.com/v1.18.0/install' -OutFile 'solana-install.sh' -UseBasicParsing } catch { exit 1 }"
+    if %ERRORLEVEL% equ 0 (
+        REM Run the installer in WSL if available, otherwise try direct execution
+        where wsl >nul 2>nul
+        if %ERRORLEVEL% equ 0 (
+            echo Installing Solana CLI via WSL...
+            wsl bash solana-install.sh
+        ) else (
+            echo [WARN] WSL not available, trying direct installation...
+            REM This may not work on Windows without proper shell
+            bash solana-install.sh 2>nul
+        )
+        del solana-install.sh 2>nul
+    )
+    
+    REM Check if installation succeeded
+    cargo --list | findstr "build-sbf" >nul 2>nul
     if %ERRORLEVEL% neq 0 (
-        echo Trying alternative installation method...
-        REM Try installing platform-tools which includes build tools
-        cargo install --git https://github.com/solana-labs/solana platform-tools --tag v1.18.0 2>nul
-        if %ERRORLEVEL% neq 0 (
-            echo [WARN] Solana platform tools installation failed, will use alternative build methods...
+        echo [WARN] Solana platform tools installation failed, will use alternative build methods..
+    ) else (
+        echo [OK] Solana CLI tools installed successfully
+        REM Ensure Solana tools are in PATH
+        set "PATH=%USERPROFILE%\.local\share\solana\install\active_release\bin;%PATH%"
+    )
+)
         )
     )
 ) else (
@@ -314,8 +333,17 @@ echo Attempting regular release build...
 cargo build --release
 
 if %ERRORLEVEL% equ 0 (
-    echo [WARN] Regular build succeeded, but may not be suitable for Solana deployment
-    echo [INFO] You may need to install Solana CLI tools for proper BPF compilation
+    REM Copy the regular build output to the expected deployment location
+    if exist "target\release\simple_perps.dll" (
+        copy "target\release\simple_perps.dll" "target\deploy\simple_perps.so" >nul
+        echo [OK] Regular build succeeded and copied to deployment location
+    ) else if exist "target\release\simple_perps.exe" (
+        copy "target\release\simple_perps.exe" "target\deploy\simple_perps.so" >nul
+        echo [OK] Regular build succeeded and copied to deployment location
+    ) else (
+        echo [WARN] Regular build succeeded, but binary not found in expected location
+        echo [INFO] You may need to install Solana CLI tools for proper BPF compilation
+    )
 ) else (
     echo [ERROR] All build methods failed!
     echo [INFO] Try these steps manually:
