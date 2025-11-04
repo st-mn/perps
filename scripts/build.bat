@@ -3,46 +3,56 @@ REM Windows build script for Solana Perpetuals Program with auto-installation
 
 echo [BUILD] Building Solana Perpetuals Program with Dependencies...
 
-REM Check if Rust is installed
+REM Check if Rust is installed by looking for rustup directory
+if exist "%USERPROFILE%\.cargo" (
+    echo [OK] Rust installation detected
+    REM Ensure cargo bin is in PATH
+    set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+    goto :rust_ready
+)
+
+REM If rustup directory doesn't exist, check PATH for existing installation
 where rustc >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [INFO] Rust not found, checking for cargo...
+if %ERRORLEVEL% equ 0 (
     where cargo >nul 2>nul
-    if %ERRORLEVEL% neq 0 (
-        echo [INFO] Installing Rust...
-        echo Downloading Rust installer...
-        
-        REM Try PowerShell download first
-        powershell -Command "try { Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile 'rustup-init.exe' -UseBasicParsing } catch { exit 1 }"
-        if %ERRORLEVEL% neq 0 (
-            echo Trying alternative download method...
-            powershell -Command "try { (New-Object System.Net.WebClient).DownloadFile('https://win.rustup.rs/x86_64', 'rustup-init.exe') } catch { exit 1 }"
-        )
-        if %ERRORLEVEL% neq 0 (
-            echo Trying curl...
-            curl -L https://win.rustup.rs/x86_64 -o rustup-init.exe
-        )
-        
-        if exist rustup-init.exe (
-            echo Running Rust installer...
-            rustup-init.exe -y --default-toolchain stable
-            del rustup-init.exe
-            echo [OK] Rust installed successfully
-        ) else (
-            echo [WARN] Failed to download Rust installer
-            echo [INFO] Please install Rust manually from: https://rustup.rs/
-            pause
-            exit /b 1
-        )
-    ) else (
-        echo [OK] Cargo found, updating PATH for rustc...
+    if %ERRORLEVEL% equ 0 (
+        echo [OK] Rust found in PATH
+        goto :rust_ready
     )
-    REM Refresh PATH for Rust tools
+)
+
+REM Rust not found, install it
+echo [INFO] Installing Rust...
+echo Downloading Rust installer...
+
+REM Try PowerShell download first
+powershell -Command "try { Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile 'rustup-init.exe' -UseBasicParsing } catch { exit 1 }"
+if %ERRORLEVEL% neq 0 (
+    echo Trying alternative download method...
+    powershell -Command "try { (New-Object System.Net.WebClient).DownloadFile('https://win.rustup.rs/x86_64', 'rustup-init.exe') } catch { exit 1 }"
+)
+if %ERRORLEVEL% neq 0 (
+    echo Trying curl...
+    curl -L https://win.rustup.rs/x86_64 -o rustup-init.exe
+)
+
+if exist rustup-init.exe (
+    echo Running Rust installer...
+    rustup-init.exe -y --default-toolchain stable
+    del rustup-init.exe
+    echo [OK] Rust installed successfully
     set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 ) else (
-    echo [OK] Rust already installed
-    rustc --version
+    echo [WARN] Failed to download Rust installer
+    echo [INFO] Please install Rust manually from: https://rustup.rs/
+    pause
+    exit /b 1
 )
+
+:rust_ready
+echo [OK] Rust tools now available in PATH
+rustc --version
+cargo --version
 
 REM Check if Solana CLI is installed
 where solana >nul 2>nul
@@ -90,13 +100,10 @@ exit /b 1
 :solana_available
 echo [OK] Solana CLI is available
 
-REM Refresh PATH to ensure Rust is available
-set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-
-REM Verify Rust is now accessible
+REM Verify Rust is still accessible (should be from earlier check)
 where rustc >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Rust still not found in PATH after installation!
+    echo [ERROR] Rust not found in PATH!
     echo [INFO] Please restart your terminal and run this script again.
     pause
     exit /b 1
@@ -270,7 +277,39 @@ if %ERRORLEVEL% equ 0 (
     )
 )
 
-REM Method 5: Try regular release build (fallback)
+REM Method 5: Try WSL-based build with cargo build-sbf
+echo Attempting WSL build with cargo build-sbf...
+wsl bash -c "cd /mnt/c/Users/stant/source/perps && cargo build-sbf --manifest-path Cargo.toml --sbf-out-dir target/deploy" 2>nul
+if %ERRORLEVEL% equ 0 goto :build_success
+
+REM Method 6: Try WSL-based build with cargo-build-bpf
+echo Attempting WSL build with cargo-build-bpf...
+wsl bash -c "cd /mnt/c/Users/stant/source/perps && cargo build-bpf --manifest-path Cargo.toml --bpf-out-dir target/deploy" 2>nul
+if %ERRORLEVEL% equ 0 goto :build_success
+
+REM Method 7: Try WSL-based standard cargo build for Solana target
+echo Attempting WSL standard cargo build for Solana target...
+wsl bash -c "cd /mnt/c/Users/stant/source/perps && cargo build --release --target sbf-solana-solana" 2>nul
+if %ERRORLEVEL% equ 0 (
+    REM Copy the binary to the expected location
+    if exist "target\sbf-solana-solana\release\simple_perps.so" (
+        copy "target\sbf-solana-solana\release\simple_perps.so" "target\deploy\simple_perps.so" >nul
+        if %ERRORLEVEL% equ 0 goto :build_success
+    )
+)
+
+REM Method 8: Try WSL-based legacy BPF target
+echo Attempting WSL build with legacy BPF target...
+wsl bash -c "cd /mnt/c/Users/stant/source/perps && cargo build --release --target bpf-unknown-unknown" 2>nul
+if %ERRORLEVEL% equ 0 (
+    REM Copy the binary to the expected location
+    if exist "target\bpf-unknown-unknown\release\simple_perps.so" (
+        copy "target\bpf-unknown-unknown\release\simple_perps.so" "target\deploy\simple_perps.so" >nul
+        if %ERRORLEVEL% equ 0 goto :build_success
+    )
+)
+
+REM Method 9: Try regular release build (fallback)
 echo Attempting regular release build...
 cargo build --release
 
@@ -287,9 +326,6 @@ if %ERRORLEVEL% equ 0 (
     echo    5. Install Solana CLI tools via WSL or direct installation
     echo    6. Try manual build: cargo build --release --target sbf-solana-solana
     echo.
-    echo Debug information:
-    echo    Rust location: %USERPROFILE%\.cargo\bin
-    echo    Current PATH: %PATH%
     exit /b 1
 )
 

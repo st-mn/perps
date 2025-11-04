@@ -12,7 +12,6 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 solana-program = "1.18.0"
 borsh = "0.10"
-spl-token = "9.0.0"
 
 [features]
 no-entrypoint = []

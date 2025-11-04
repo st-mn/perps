@@ -1,21 +1,46 @@
+#![allow(unexpected_cfgs)]
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
+    instruction::{AccountMeta, Instruction},
     msg,
     program::{invoke, invoke_signed},
     program_error::ProgramError,
-    program_pack::Pack,
     pubkey::Pubkey,
     sysvar::{clock::Clock, rent::Rent, Sysvar},
     system_instruction,
-    rent::Rent as RentStruct,
 };
-use spl_token;
+
+// Suppress warnings for educational implementation
+#[allow(unused)]
 
 /// PDA seed for the program's authority (used for collateral vault)
 pub const PDA_SEED: &[u8] = b"perps";
+
+/// Helper function to create a SPL token transfer instruction
+fn create_transfer_instruction(
+    token_program: &Pubkey,
+    source: &Pubkey,
+    destination: &Pubkey,
+    authority: &Pubkey,
+    amount: u64,
+) -> Result<Instruction, ProgramError> {
+    let mut data = vec![3]; // Transfer instruction discriminator
+    data.extend_from_slice(&amount.to_le_bytes());
+
+    Ok(Instruction {
+        program_id: *token_program,
+        accounts: vec![
+            AccountMeta::new(*source, false),
+            AccountMeta::new(*destination, false),
+            AccountMeta::new_readonly(*authority, true),
+        ],
+        data,
+    })
+}
 
 /// Minimum collateral ratio (150% = 1.5 * 1e9)
 pub const MIN_COLLATERAL_RATIO: u64 = 1_500_000_000;
@@ -160,7 +185,7 @@ pub fn open_position(
             system_program.clone(),
         ])?;
 
-        let mut market_state = MarketState {
+        let market_state = MarketState {
             funding_index: 0,
             funding_rate_per_slot: 0,
             open_interest: 0,
@@ -190,7 +215,7 @@ pub fn open_position(
             system_program.clone(),
         ])?;
 
-        let mut position = Position {
+        let position = Position {
             owner: *user.key,
             base_amount: 0,
             collateral: 0,
@@ -202,7 +227,9 @@ pub fn open_position(
     }
 
     // ---------- Load mutable structs ----------
+    #[allow(unused_mut)]
     let mut market_state = MarketState::try_from_slice(&market_state_acc.data.borrow())?;
+    #[allow(unused_mut)]
     let mut position = Position::try_from_slice(&position_acc.data.borrow())?;
 
     // Verify position owner
@@ -213,15 +240,14 @@ pub fn open_position(
 
     // ---------- Transfer collateral from user to vault ----------
     if collateral_delta > 0 {
-        let transfer_ix = spl_token::instruction::transfer(
+        let transfer_ix = create_transfer_instruction(
             token_program.key,
             user_collateral.key,
             vault.key,
             user.key,
-            &[],
             collateral_delta,
         )?;
-        
+
         invoke(&transfer_ix, &[
             user_collateral.clone(),
             vault.clone(),
@@ -232,7 +258,7 @@ pub fn open_position(
         position.collateral = position
             .collateral
             .checked_add(collateral_delta)
-            .ok_or(ProgramError::Overflow)?;
+            .ok_or(ProgramError::InvalidArgument)?;
         
         msg!("Transferred {} collateral to vault", collateral_delta);
     }
@@ -240,13 +266,13 @@ pub fn open_position(
     // ---------- Apply pending funding before position update ----------
     let funding_delta = market_state.funding_index
         .checked_sub(position.last_funding_index)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     if funding_delta != 0 && position.base_amount != 0 {
         // Funding payment = base_amount * funding_delta / 1e9
         let funding_payment = ((position.base_amount as i128)
             .checked_mul(funding_delta as i128)
-            .ok_or(ProgramError::Overflow)?)
+            .ok_or(ProgramError::InvalidArgument)?)
             .checked_div(1_000_000_000i128)
             .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -262,7 +288,7 @@ pub fn open_position(
             position.collateral = position
                 .collateral
                 .checked_add((-funding_payment) as u64)
-                .ok_or(ProgramError::Overflow)?;
+                .ok_or(ProgramError::InvalidArgument)?;
             msg!("Received funding payment: +{}", -funding_payment);
         }
     }
@@ -273,7 +299,7 @@ pub fn open_position(
     position.base_amount = position
         .base_amount
         .checked_add(base_delta)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     // Update entry price for new position or position increase
     if old_base_amount == 0 || (old_base_amount > 0 && base_delta > 0) || (old_base_amount < 0 && base_delta < 0) {
@@ -281,15 +307,15 @@ pub fn open_position(
     }
 
     // Update open interest
-    let old_oi_contribution = (old_base_amount.abs() as u64);
-    let new_oi_contribution = (position.base_amount.abs() as u64);
+    let old_oi_contribution = old_base_amount.abs() as u64;
+    let new_oi_contribution = position.base_amount.abs() as u64;
     
     market_state.open_interest = market_state
         .open_interest
         .checked_sub(old_oi_contribution)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_add(new_oi_contribution)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     // Update mark price
     market_state.mark_price = entry_price;
@@ -298,14 +324,14 @@ pub fn open_position(
     if position.base_amount != 0 {
         let position_value = (position.base_amount.abs() as u64)
             .checked_mul(market_state.mark_price)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(1_000_000_000)
             .ok_or(ProgramError::InvalidAccountData)?;
 
         let collateral_ratio = if position_value > 0 {
             position.collateral
                 .checked_mul(1_000_000_000)
-                .ok_or(ProgramError::Overflow)?
+                .ok_or(ProgramError::InvalidArgument)?
                 .checked_div(position_value)
                 .ok_or(ProgramError::InvalidAccountData)?
         } else {
@@ -333,7 +359,7 @@ pub fn open_position(
 // ---------------------------------------------------------------------
 // 1️⃣ Update funding index (called periodically, e.g., every slot)
 // ---------------------------------------------------------------------
-pub fn update_funding(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+pub fn update_funding(_program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     // Accounts:
     // 0. [writable] market state PDA
     // 1. [] clock sysvar
@@ -365,7 +391,7 @@ pub fn update_funding(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     // - Market volatility
     // - External funding rates
     market_state.funding_rate_per_slot = if market_state.open_interest > 1_000_000_000 {
-        base_rate.checked_mul(2).ok_or(ProgramError::Overflow)?  // Higher rate for higher OI
+        base_rate.checked_mul(2).ok_or(ProgramError::InvalidArgument)?  // Higher rate for higher OI
     } else {
         base_rate
     };
@@ -373,11 +399,11 @@ pub fn update_funding(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     // Accumulate funding index
     let funding_increment = market_state.funding_rate_per_slot
         .checked_mul(slots_elapsed as i64)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
         
     market_state.funding_index = market_state.funding_index
         .checked_add(funding_increment)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     market_state.last_funding_slot = clock.slot;
 
@@ -416,7 +442,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    let clock = Clock::from_account_info(clock_sysvar)?;
+    let _clock = Clock::from_account_info(clock_sysvar)?;
     let mut market_state = MarketState::try_from_slice(&market_state_acc.data.borrow())?;
     let mut position = Position::try_from_slice(&position_acc.data.borrow())?;
 
@@ -429,12 +455,12 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     // Apply any pending funding
     let funding_delta = market_state.funding_index
         .checked_sub(position.last_funding_index)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     if funding_delta != 0 {
         let funding_payment = ((position.base_amount as i128)
             .checked_mul(funding_delta as i128)
-            .ok_or(ProgramError::Overflow)?)
+            .ok_or(ProgramError::InvalidArgument)?)
             .checked_div(1_000_000_000i128)
             .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -447,7 +473,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
             position.collateral = position
                 .collateral
                 .checked_add((-funding_payment) as u64)
-                .ok_or(ProgramError::Overflow)?;
+                .ok_or(ProgramError::InvalidArgument)?;
         }
     }
     position.last_funding_index = market_state.funding_index;
@@ -456,14 +482,14 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     let position_size = position.base_amount.abs() as u64;
     let position_value = position_size
         .checked_mul(market_state.mark_price)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_div(1_000_000_000)
         .ok_or(ProgramError::InvalidAccountData)?;
 
     // Calculate unrealized PnL
-    let entry_value = position_size
+    let _entry_value = position_size
         .checked_mul(position.entry_price)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_div(1_000_000_000)
         .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -471,18 +497,18 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
         // Long position: PnL = (mark_price - entry_price) * size
         (market_state.mark_price as i64)
             .checked_sub(position.entry_price as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_mul(position_size as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(1_000_000_000)
             .ok_or(ProgramError::InvalidAccountData)?
     } else {
         // Short position: PnL = (entry_price - mark_price) * size
         (position.entry_price as i64)
             .checked_sub(market_state.mark_price as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_mul(position_size as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(1_000_000_000)
             .ok_or(ProgramError::InvalidAccountData)?
     };
@@ -491,7 +517,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     let effective_collateral = if unrealized_pnl >= 0 {
         position.collateral
             .checked_add(unrealized_pnl as u64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
     } else {
         position.collateral
             .checked_sub((-unrealized_pnl) as u64)
@@ -502,7 +528,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     let collateral_ratio = if position_value > 0 {
         effective_collateral
             .checked_mul(1_000_000_000)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(position_value)
             .ok_or(ProgramError::InvalidAccountData)?
     } else {
@@ -518,7 +544,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     // Calculate liquidation penalty
     let penalty_amount = position.collateral
         .checked_mul(LIQUIDATION_PENALTY)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_div(1_000_000_000)
         .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -529,12 +555,11 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
 
     // Transfer liquidation reward to liquidator
     if penalty_amount > 0 {
-        let transfer_ix = spl_token::instruction::transfer(
+        let transfer_ix = create_transfer_instruction(
             token_program.key,
             vault.key,
             liquidator_token_acc.key,
             &pda,
-            &[],
             penalty_amount,
         )?;
 
@@ -549,7 +574,7 @@ pub fn liquidate(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult
     // Update market state
     market_state.open_interest = market_state.open_interest
         .checked_sub(position_size)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     // Clear the position
     position.base_amount = 0;
@@ -607,12 +632,12 @@ pub fn close_position(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     // Apply any pending funding
     let funding_delta = market_state.funding_index
         .checked_sub(position.last_funding_index)
-        .ok_or(ProgramError::Overflow)?;
+        .ok_or(ProgramError::InvalidArgument)?;
 
     if funding_delta != 0 && position.base_amount != 0 {
         let funding_payment = ((position.base_amount as i128)
             .checked_mul(funding_delta as i128)
-            .ok_or(ProgramError::Overflow)?)
+            .ok_or(ProgramError::InvalidArgument)?)
             .checked_div(1_000_000_000i128)
             .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -625,7 +650,7 @@ pub fn close_position(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
             position.collateral = position
                 .collateral
                 .checked_add((-funding_payment) as u64)
-                .ok_or(ProgramError::Overflow)?;
+                .ok_or(ProgramError::InvalidArgument)?;
         }
     }
 
@@ -633,7 +658,7 @@ pub fn close_position(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     if position.base_amount != 0 {
         market_state.open_interest = market_state.open_interest
             .checked_sub(position.base_amount.abs() as u64)
-            .ok_or(ProgramError::Overflow)?;
+            .ok_or(ProgramError::InvalidArgument)?;
     }
 
     // Transfer remaining collateral to user
@@ -642,12 +667,11 @@ pub fn close_position(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
         let seeds = &[PDA_SEED, &[bump]];
         let signer_seeds = &[&seeds[..]];
 
-        let transfer_ix = spl_token::instruction::transfer(
+        let transfer_ix = create_transfer_instruction(
             token_program.key,
             vault.key,
             user_token_acc.key,
             &pda,
-            &[],
             position.collateral,
         )?;
 
@@ -689,7 +713,7 @@ pub fn calculate_position_health(position: &Position, mark_price: u64) -> Result
 
     let position_value = (position.base_amount.abs() as u64)
         .checked_mul(mark_price)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_div(1_000_000_000)
         .ok_or(ProgramError::InvalidAccountData)?;
 
@@ -699,7 +723,7 @@ pub fn calculate_position_health(position: &Position, mark_price: u64) -> Result
 
     position.collateral
         .checked_mul(1_000_000_000)
-        .ok_or(ProgramError::Overflow)?
+        .ok_or(ProgramError::InvalidArgument)?
         .checked_div(position_value)
         .ok_or(ProgramError::InvalidAccountData)
 }
@@ -716,18 +740,18 @@ pub fn calculate_unrealized_pnl(position: &Position, mark_price: u64) -> Result<
         // Long position: PnL = (mark_price - entry_price) * size / 1e9
         (mark_price as i64)
             .checked_sub(position.entry_price as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_mul(position_size as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(1_000_000_000)
             .ok_or(ProgramError::InvalidAccountData)?
     } else {
         // Short position: PnL = (entry_price - mark_price) * size / 1e9
         (position.entry_price as i64)
             .checked_sub(mark_price as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_mul(position_size as i64)
-            .ok_or(ProgramError::Overflow)?
+            .ok_or(ProgramError::InvalidArgument)?
             .checked_div(1_000_000_000)
             .ok_or(ProgramError::InvalidAccountData)?
     };
@@ -739,5 +763,3 @@ pub fn calculate_unrealized_pnl(position: &Position, mark_price: u64) -> Result<
 mod tests;
 
 // Re-export for testing
-pub use calculate_position_health;
-pub use calculate_unrealized_pnl;
