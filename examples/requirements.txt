@@ -1,0 +1,27 @@
+# Solana Perpetuals Python Client Dependencies
+
+# Core Solana libraries
+solana>=0.30.0
+solders>=0.18.0
+
+# SPL Token support
+spl-token>=0.2.0
+
+# Data serialization
+borsh-construct>=0.1.0
+
+# Async HTTP client (used by solana-py)
+httpx>=0.24.0
+
+# Optional: For enhanced development experience
+jupyter>=1.0.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Type hints and development
+mypy>=1.0.0
+black>=23.0.0

@@ -1,0 +1,482 @@
+"""
+Simple Perpetuals Python Client Example
+
+This Python example demonstrates how to interact with the
+Simple Perpetuals Solana program from a Python application.
+
+Prerequisites:
+- pip install solana solders borsh-construct spl-token
+- Program deployed and Program ID available
+"""
+
+import asyncio
+import struct
+from typing import Optional, Tuple, Dict, Any
+from dataclasses import dataclass
+from solana.rpc.async_api import AsyncClient
+from solana.rpc.commitment import Confirmed, Finalized
+from solana.rpc.types import TxOpts
+from solana.keypair import Keypair
+from solana.publickey import PublicKey
+from solana.system_program import SYS_PROGRAM_ID
+from solana.sysvar import SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY
+from solana.transaction import Transaction
+from solana.instruction import Instruction, AccountMeta
+from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import transfer, TransferParams
+from spl.token._layouts import ACCOUNT_LAYOUT
+import borsh_construct as borsh
+
+# Configuration
+PROGRAM_ID_STR = "YOUR_PROGRAM_ID_HERE"  # Replace with actual program ID
+PDA_SEED = b"perps"
+PRECISION = 1_000_000_000  # 1e9 precision for prices
+
+# Instruction tags
+INSTRUCTION_OPEN_POSITION = 0
+INSTRUCTION_UPDATE_FUNDING = 1
+INSTRUCTION_LIQUIDATE = 2
+INSTRUCTION_CLOSE_POSITION = 3
+
+# Borsh schemas for data serialization/deserialization
+@dataclass
+class Position:
+    owner: PublicKey
+    base_amount: int  # i64
+    collateral: int   # u64
+    last_funding_index: int  # i64
+    entry_price: int  # u64
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> 'Position':
+        """Deserialize Position from account data"""
+        if len(data) < 64:
+            raise ValueError("Invalid position data length")
+        
+        owner = PublicKey(data[0:32])
+        base_amount = struct.unpack('<q', data[32:40])[0]  # i64
+        collateral = struct.unpack('<Q', data[40:48])[0]   # u64
+        last_funding_index = struct.unpack('<q', data[48:56])[0]  # i64
+        entry_price = struct.unpack('<Q', data[56:64])[0]  # u64
+        
+        return cls(owner, base_amount, collateral, last_funding_index, entry_price)
+
+@dataclass
+class MarketState:
+    funding_index: int          # i64
+    funding_rate_per_slot: int  # i64
+    open_interest: int          # u64
+    bump: int                   # u8
+    last_funding_slot: int      # u64
+    mark_price: int            # u64
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> 'MarketState':
+        """Deserialize MarketState from account data"""
+        if len(data) < 41:
+            raise ValueError("Invalid market state data length")
+        
+        funding_index = struct.unpack('<q', data[0:8])[0]        # i64
+        funding_rate_per_slot = struct.unpack('<q', data[8:16])[0]  # i64
+        open_interest = struct.unpack('<Q', data[16:24])[0]      # u64
+        bump = struct.unpack('<B', data[24:25])[0]               # u8
+        last_funding_slot = struct.unpack('<Q', data[25:33])[0]  # u64
+        mark_price = struct.unpack('<Q', data[33:41])[0]         # u64
+        
+        return cls(funding_index, funding_rate_per_slot, open_interest, 
+                  bump, last_funding_slot, mark_price)
+
+class PerpetualsClient:
+    """Python client for interacting with the Simple Perpetuals program"""
+    
+    def __init__(self, rpc_url: str, payer: Keypair, program_id: str):
+        self.client = AsyncClient(rpc_url, commitment=Confirmed)
+        self.payer = payer
+        self.program_id = PublicKey(program_id)
+        
+    async def close(self):
+        """Close the RPC client"""
+        await self.client.close()
+    
+    def get_program_authority(self) -> Tuple[PublicKey, int]:
+        """Get PDA for the program authority (vault)"""
+        return PublicKey.find_program_address([PDA_SEED], self.program_id)
+    
+    def get_position_address(self, user: PublicKey) -> Tuple[PublicKey, int]:
+        """Get PDA for a user's position account"""
+        return PublicKey.find_program_address([b"position", bytes(user)], self.program_id)
+    
+    def get_market_state_address(self) -> Tuple[PublicKey, int]:
+        """Get PDA for the market state account"""
+        return PublicKey.find_program_address([b"market"], self.program_id)
+    
+    async def open_position(
+        self,
+        base_delta: int,        # Position size change (signed)
+        collateral_delta: int,  # Additional collateral
+        entry_price: int,       # Entry price
+        user_token_account: PublicKey
+    ) -> str:
+        """Open or modify a position"""
+        
+        vault_pda, _ = self.get_program_authority()
+        position_pda, _ = self.get_position_address(self.payer.public_key)
+        market_state_pda, _ = self.get_market_state_address()
+        
+        # Create instruction data
+        instruction_data = bytearray(25)
+        instruction_data[0] = INSTRUCTION_OPEN_POSITION
+        instruction_data[1:9] = struct.pack('<q', base_delta)      # i64
+        instruction_data[9:17] = struct.pack('<Q', collateral_delta)  # u64
+        instruction_data[17:25] = struct.pack('<Q', entry_price)   # u64
+        
+        accounts = [
+            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=user_token_account, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=position_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=market_state_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=SYSVAR_RENT_PUBKEY, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=SYSVAR_CLOCK_PUBKEY, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=SYS_PROGRAM_ID, is_signer=False, is_writable=False),
+        ]
+        
+        instruction = Instruction(
+            program_id=self.program_id,
+            data=bytes(instruction_data),
+            accounts=accounts
+        )
+        
+        transaction = Transaction().add(instruction)
+        
+        response = await self.client.send_transaction(
+            transaction, 
+            self.payer,
+            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed)
+        )
+        
+        return response['result']
+    
+    async def update_funding(self) -> str:
+        """Update funding rates (should be called periodically)"""
+        
+        market_state_pda, _ = self.get_market_state_address()
+        
+        instruction_data = bytes([INSTRUCTION_UPDATE_FUNDING])
+        
+        accounts = [
+            AccountMeta(pubkey=market_state_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=SYSVAR_CLOCK_PUBKEY, is_signer=False, is_writable=False),
+        ]
+        
+        instruction = Instruction(
+            program_id=self.program_id,
+            data=instruction_data,
+            accounts=accounts
+        )
+        
+        transaction = Transaction().add(instruction)
+        
+        response = await self.client.send_transaction(
+            transaction,
+            self.payer,
+            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed)
+        )
+        
+        return response['result']
+    
+    async def liquidate(
+        self,
+        position_owner: PublicKey,
+        liquidator_token_account: PublicKey
+    ) -> str:
+        """Liquidate an undercollateralized position"""
+        
+        vault_pda, _ = self.get_program_authority()
+        position_pda, _ = self.get_position_address(position_owner)
+        market_state_pda, _ = self.get_market_state_address()
+        
+        instruction_data = bytes([INSTRUCTION_LIQUIDATE])
+        
+        accounts = [
+            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=liquidator_token_account, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=position_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=market_state_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=SYSVAR_CLOCK_PUBKEY, is_signer=False, is_writable=False),
+        ]
+        
+        instruction = Instruction(
+            program_id=self.program_id,
+            data=instruction_data,
+            accounts=accounts
+        )
+        
+        transaction = Transaction().add(instruction)
+        
+        response = await self.client.send_transaction(
+            transaction,
+            self.payer,
+            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed)
+        )
+        
+        return response['result']
+    
+    async def close_position(self, user_token_account: PublicKey) -> str:
+        """Close a position voluntarily"""
+        
+        vault_pda, _ = self.get_program_authority()
+        position_pda, _ = self.get_position_address(self.payer.public_key)
+        market_state_pda, _ = self.get_market_state_address()
+        
+        instruction_data = bytes([INSTRUCTION_CLOSE_POSITION])
+        
+        accounts = [
+            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=user_token_account, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=position_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=market_state_pda, is_signer=False, is_writable=True),
+        ]
+        
+        instruction = Instruction(
+            program_id=self.program_id,
+            data=instruction_data,
+            accounts=accounts
+        )
+        
+        transaction = Transaction().add(instruction)
+        
+        response = await self.client.send_transaction(
+            transaction,
+            self.payer,
+            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed)
+        )
+        
+        return response['result']
+    
+    async def get_position(self, user: PublicKey) -> Optional[Position]:
+        """Get position data for a user"""
+        
+        position_pda, _ = self.get_position_address(user)
+        
+        try:
+            response = await self.client.get_account_info(position_pda, commitment=Confirmed)
+            if response['result']['value'] is None:
+                return None
+            
+            account_data = response['result']['value']['data'][0]
+            # Decode base64 data
+            import base64
+            raw_data = base64.b64decode(account_data)
+            
+            return Position.from_bytes(raw_data)
+            
+        except Exception as e:
+            print(f"Error fetching position: {e}")
+            return None
+    
+    async def get_market_state(self) -> Optional[MarketState]:
+        """Get market state"""
+        
+        market_state_pda, _ = self.get_market_state_address()
+        
+        try:
+            response = await self.client.get_account_info(market_state_pda, commitment=Confirmed)
+            if response['result']['value'] is None:
+                return None
+            
+            account_data = response['result']['value']['data'][0]
+            # Decode base64 data
+            import base64
+            raw_data = base64.b64decode(account_data)
+            
+            return MarketState.from_bytes(raw_data)
+            
+        except Exception as e:
+            print(f"Error fetching market state: {e}")
+            return None
+    
+    async def calculate_position_health(self, position: Position, mark_price: int) -> float:
+        """Calculate position health (collateral ratio)"""
+        if position.base_amount == 0:
+            return float('inf')  # No position = perfect health
+        
+        position_value = abs(position.base_amount) * mark_price // PRECISION
+        if position_value == 0:
+            return float('inf')
+        
+        return position.collateral / position_value
+    
+    async def calculate_unrealized_pnl(self, position: Position, mark_price: int) -> int:
+        """Calculate unrealized PnL for a position"""
+        if position.base_amount == 0:
+            return 0
+        
+        position_size = abs(position.base_amount)
+        
+        if position.base_amount > 0:  # Long position
+            # PnL = (mark_price - entry_price) * size / 1e9
+            pnl = (mark_price - position.entry_price) * position_size // PRECISION
+        else:  # Short position
+            # PnL = (entry_price - mark_price) * size / 1e9
+            pnl = (position.entry_price - mark_price) * position_size // PRECISION
+        
+        return pnl
+
+# Utility functions
+def price_to_program(price: float) -> int:
+    """Convert human-readable price to program format"""
+    return int(price * PRECISION)
+
+def price_from_program(program_price: int) -> float:
+    """Convert program price to human-readable format"""
+    return program_price / PRECISION
+
+def size_to_program(size: float) -> int:
+    """Convert human-readable size to program format"""
+    return int(size * PRECISION)
+
+def size_from_program(program_size: int) -> float:
+    """Convert program size to human-readable format"""
+    return program_size / PRECISION
+
+async def example_usage():
+    """Example usage of the Perpetuals client"""
+    
+    # Connect to devnet
+    rpc_url = "https://api.devnet.solana.com"
+    
+    # Generate a keypair (in practice, load from file)
+    payer = Keypair()
+    
+    # Initialize client
+    client = PerpetualsClient(rpc_url, payer, PROGRAM_ID_STR)
+    
+    try:
+        print("🚀 Simple Perpetuals Python Client Example")
+        print(f"Wallet: {payer.public_key}")
+        
+        # Example token account (replace with actual USDC token account)
+        user_token_account = PublicKey("REPLACE_WITH_ACTUAL_TOKEN_ACCOUNT")
+        
+        print("\n📊 Checking current market state...")
+        market_state = await client.get_market_state()
+        if market_state:
+            print(f"Funding Index: {market_state.funding_index}")
+            print(f"Mark Price: ${price_from_program(market_state.mark_price):.2f}")
+            print(f"Open Interest: {size_from_program(market_state.open_interest):.2f}")
+        else:
+            print("Market not initialized yet")
+        
+        print("\n📈 Opening a long position...")
+        try:
+            tx_id = await client.open_position(
+                base_delta=size_to_program(1.0),      # 1 unit long
+                collateral_delta=price_to_program(150), # 150 USDC collateral
+                entry_price=price_to_program(100.50),   # $100.50 entry price
+                user_token_account=user_token_account
+            )
+            print(f"✅ Position opened! Transaction: {tx_id}")
+        except Exception as e:
+            print(f"❌ Failed to open position: {e}")
+        
+        print("\n🔄 Updating funding...")
+        try:
+            funding_tx_id = await client.update_funding()
+            print(f"✅ Funding updated! Transaction: {funding_tx_id}")
+        except Exception as e:
+            print(f"❌ Failed to update funding: {e}")
+        
+        print("\n👤 Checking position...")
+        position = await client.get_position(payer.public_key)
+        if position:
+            print(f"Position Size: {size_from_program(position.base_amount):.4f}")
+            print(f"Collateral: {price_from_program(position.collateral):.2f}")
+            print(f"Entry Price: ${price_from_program(position.entry_price):.2f}")
+            
+            # Calculate health and PnL
+            current_price = price_to_program(102.0)  # Assume $102 current price
+            health = await client.calculate_position_health(position, current_price)
+            pnl = await client.calculate_unrealized_pnl(position, current_price)
+            
+            print(f"Health Ratio: {health:.2f}")
+            print(f"Unrealized PnL: ${price_from_program(pnl):.2f}")
+        else:
+            print("No position found")
+        
+        print("\n🔍 Final market state...")
+        final_market_state = await client.get_market_state()
+        if final_market_state:
+            print(f"Updated Funding Index: {final_market_state.funding_index}")
+            print(f"Funding Rate/Slot: {final_market_state.funding_rate_per_slot}")
+            print(f"Total Open Interest: {size_from_program(final_market_state.open_interest):.2f}")
+        
+    except Exception as e:
+        print(f"❌ Example error: {e}")
+    finally:
+        await client.close()
+
+class PositionMonitor:
+    """Utility class for monitoring positions and liquidation opportunities"""
+    
+    def __init__(self, client: PerpetualsClient):
+        self.client = client
+    
+    async def monitor_liquidations(self, user_addresses: list[PublicKey]) -> list[PublicKey]:
+        """Monitor positions for liquidation opportunities"""
+        liquidatable = []
+        
+        market_state = await self.client.get_market_state()
+        if not market_state:
+            return liquidatable
+        
+        for user in user_addresses:
+            position = await self.client.get_position(user)
+            if not position or position.base_amount == 0:
+                continue
+            
+            health = await self.client.calculate_position_health(position, market_state.mark_price)
+            
+            # Check if below 150% collateral ratio (1.5)
+            if health < 1.5:
+                liquidatable.append(user)
+                print(f"🚨 Liquidation opportunity: {user} (health: {health:.3f})")
+        
+        return liquidatable
+    
+    async def get_position_summary(self, user: PublicKey) -> Dict[str, Any]:
+        """Get comprehensive position summary"""
+        position = await self.client.get_position(user)
+        if not position:
+            return {"exists": False}
+        
+        market_state = await self.client.get_market_state()
+        if not market_state:
+            return {"exists": True, "error": "Market state not available"}
+        
+        health = await self.client.calculate_position_health(position, market_state.mark_price)
+        pnl = await self.client.calculate_unrealized_pnl(position, market_state.mark_price)
+        
+        return {
+            "exists": True,
+            "owner": str(position.owner),
+            "size": size_from_program(position.base_amount),
+            "collateral": price_from_program(position.collateral),
+            "entry_price": price_from_program(position.entry_price),
+            "mark_price": price_from_program(market_state.mark_price),
+            "health_ratio": health,
+            "unrealized_pnl": price_from_program(pnl),
+            "is_liquidatable": health < 1.5,
+            "position_type": "Long" if position.base_amount > 0 else "Short" if position.base_amount < 0 else "None"
+        }
+
+# Run example if this file is executed directly
+if __name__ == "__main__":
+    print("🐍 Solana Perpetuals Python Client")
+    print("⚠️  Make sure to replace PROGRAM_ID_STR and token accounts with actual values!")
+    asyncio.run(example_usage())
