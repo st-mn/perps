@@ -1,4 +1,4 @@
-# Minimal Perpetuals (Perps) Program Solaba Smart Contract
+# Minimal Perpetuals (Perps) Program Solana Smart Contract
 
 A **minimal educational implementation** of a perpetual futures trading program on Solana. This demonstrates the core concepts of opening positions, funding payments, and liquidations.
 
