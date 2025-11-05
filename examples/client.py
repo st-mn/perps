@@ -30,7 +30,7 @@ import borsh_construct as borsh
 # Load program ID dynamically from deployment file
 try:
     with open("../program_id.txt", "r") as f:
-        PROGRAM_ID_STR = f.read().strip()
+        PROGRAM_ID_STR = f.readline().strip()
 except FileNotFoundError:
     PROGRAM_ID_STR = "YOUR_PROGRAM_ID_HERE"  # Fallback if file doesn't exist
 PDA_SEED = b"perps"
@@ -365,60 +365,27 @@ async def example_usage():
         print("🚀 Simple Perpetuals Python Client Example")
         print(f"Wallet: {payer.pubkey()}")
         
-        # Example token account (replace with actual USDC token account)
-        user_token_account = Pubkey("REPLACE_WITH_ACTUAL_TOKEN_ACCOUNT")
+        # Test PDA generation (works without deployed program)
+        vault_pda, vault_bump = client.get_program_authority()
+        position_pda, pos_bump = client.get_position_address(payer.pubkey())
+        market_pda, market_bump = client.get_market_state_address()
         
-        print("\n📊 Checking current market state...")
-        market_state = await client.get_market_state()
-        if market_state:
-            print(f"Funding Index: {market_state.funding_index}")
-            print(f"Mark Price: ${price_from_program(market_state.mark_price):.2f}")
-            print(f"Open Interest: {size_from_program(market_state.open_interest):.2f}")
-        else:
-            print("Market not initialized yet")
+        print(f"🏦 Vault PDA: {vault_pda} (bump: {vault_bump})")
+        print(f"👤 Position PDA: {position_pda} (bump: {pos_bump})")
+        print(f"📊 Market PDA: {market_pda} (bump: {market_bump})")
         
-        print("\n📈 Opening a long position...")
-        try:
-            tx_id = await client.open_position(
-                base_delta=size_to_program(1.0),      # 1 unit long
-                collateral_delta=price_to_program(150), # 150 USDC collateral
-                entry_price=price_to_program(100.50),   # $100.50 entry price
-                user_token_account=user_token_account
-            )
-            print(f"✅ Position opened! Transaction: {tx_id}")
-        except Exception as e:
-            print(f"❌ Failed to open position: {e}")
+        # Test price conversions
+        test_price = 100.50
+        program_price = price_to_program(test_price)
+        converted_back = price_from_program(program_price)
+        print(f"💰 Price conversion test: ${test_price} → {program_price} → ${converted_back}")
         
-        print("\n🔄 Updating funding...")
-        try:
-            funding_tx_id = await client.update_funding()
-            print(f"✅ Funding updated! Transaction: {funding_tx_id}")
-        except Exception as e:
-            print(f"❌ Failed to update funding: {e}")
-        
-        print("\n👤 Checking position...")
-        position = await client.get_position(payer.pubkey())
-        if position:
-            print(f"Position Size: {size_from_program(position.base_amount):.4f}")
-            print(f"Collateral: {price_from_program(position.collateral):.2f}")
-            print(f"Entry Price: ${price_from_program(position.entry_price):.2f}")
-            
-            # Calculate health and PnL
-            current_price = price_to_program(102.0)  # Assume $102 current price
-            health = await client.calculate_position_health(position, current_price)
-            pnl = await client.calculate_unrealized_pnl(position, current_price)
-            
-            print(f"Health Ratio: {health:.2f}")
-            print(f"Unrealized PnL: ${price_from_program(pnl):.2f}")
-        else:
-            print("No position found")
-        
-        print("\n🔍 Final market state...")
-        final_market_state = await client.get_market_state()
-        if final_market_state:
-            print(f"Updated Funding Index: {final_market_state.funding_index}")
-            print(f"Funding Rate/Slot: {final_market_state.funding_rate_per_slot}")
-            print(f"Total Open Interest: {size_from_program(final_market_state.open_interest):.2f}")
+        # Skip actual blockchain operations since program may not be deployed
+        print("⚠️  Skipping blockchain operations (program may not be deployed)")
+        print("💡 To test with real program:")
+        print("   1. Deploy the program to devnet")
+        print("   2. Create token accounts for USDC/USDT")
+        print("   3. Update the token account addresses in this script")
         
     except Exception as e:
         print(f"❌ Example error: {e}")
