@@ -5,6 +5,10 @@
 
 set -e
 
+echo ""
+echo "================================EXAMPLERUN================================"
+echo ""
+
 echo "🚀 Complete Solana Perpetuals Smart Contract Test and Demo"
 echo "==========================================================="
 

@@ -5,6 +5,9 @@
 
 set -e
 
+echo ""
+echo "================================BUILD================================"
+echo ""
 echo "🚀 Setting up Solana Perpetuals development environment and building..."
 echo ""
 

@@ -5,6 +5,11 @@
 
 set -e
 
+echo ""
+echo "================================GETSOL================================"
+echo ""
+
+
 WALLET_ADDRESS=${1:-"$(solana address)"}
 AMOUNT=${2:-1}
 

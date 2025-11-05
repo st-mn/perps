@@ -5,6 +5,10 @@
 
 set -e
 
+echo ""
+echo "================================DEPLOY================================"
+echo ""
+
 NETWORK=${1:-devnet}
 KEYPAIR_PATH=${2:-~/.config/solana/id.json}
 
