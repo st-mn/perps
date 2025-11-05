@@ -8,8 +8,8 @@ and can be used as a reference for integration tests.
 
 import asyncio
 import pytest
-from solana.keypair import Keypair
-from solana.publickey import PublicKey
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
 from client import PerpetualsClient, Position, MarketState, price_to_program, price_from_program
 
 # Test configuration
@@ -49,13 +49,13 @@ class TestPerpetualsClient:
         
         assert vault1 == vault2
         assert bump1 == bump2
-        assert isinstance(vault1, PublicKey)
+        assert isinstance(vault1, Pubkey)
         assert 0 <= bump1 <= 255
     
     def test_position_deserialization(self):
         """Test Position deserialization"""
         # Create mock position data
-        owner = Keypair().public_key
+        owner = Keypair().pubkey()
         base_amount = 1_000_000_000  # 1 unit long
         collateral = 150_000_000_000  # 150 units
         last_funding_index = 12345
@@ -119,12 +119,12 @@ async def integration_test():
         payer = Keypair()
         client = PerpetualsClient(TEST_RPC_URL, payer, TEST_PROGRAM_ID)
         
-        print(f"✅ Client initialized with wallet: {payer.public_key}")
+        print(f"✅ Client initialized with wallet: {payer.pubkey()}")
         print(f"Program ID: {client.program_id}")
         
         # Test PDA generation
         vault_pda, vault_bump = client.get_program_authority()
-        position_pda, pos_bump = client.get_position_address(payer.public_key)
+        position_pda, pos_bump = client.get_position_address(payer.pubkey())
         market_pda, market_bump = client.get_market_state_address()
         
         print(f"Vault PDA: {vault_pda} (bump: {vault_bump})")
@@ -149,7 +149,7 @@ async def stress_test():
         start_time = asyncio.get_event_loop().time()
         
         for i in range(1000):
-            test_user = Keypair().public_key
+            test_user = Keypair().pubkey()
             client.get_position_address(test_user)
         
         end_time = asyncio.get_event_loop().time()

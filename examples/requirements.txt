@@ -4,9 +4,6 @@
 solana>=0.30.0
 solders>=0.18.0
 
-# SPL Token support
-spl-token>=0.2.0
-
 # Data serialization
 borsh-construct>=0.1.0
 

@@ -26,8 +26,20 @@ import {
     getAssociatedTokenAddress,
 } from '@solana/spl-token';
 
-// Configuration
-const PROGRAM_ID = new PublicKey('YOUR_PROGRAM_ID_HERE'); // Replace with actual program ID
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Load program ID dynamically from deployment file
+let PROGRAM_ID_STR: string;
+try {
+    PROGRAM_ID_STR = fs.readFileSync(path.join(__dirname, '..', 'program_id.txt'), 'utf8').trim();
+    console.log(`✅ Loaded program ID from file: ${PROGRAM_ID_STR}`);
+} catch (error) {
+    PROGRAM_ID_STR = 'YOUR_PROGRAM_ID_HERE'; // Fallback if file doesn't exist
+    console.log(`⚠️  program_id.txt not found, using fallback: ${PROGRAM_ID_STR}`);
+}
+
+const PROGRAM_ID = new PublicKey(PROGRAM_ID_STR);
 const PDA_SEED = 'perps';
 const PRECISION = 1_000_000_000; // 1e9 precision for prices
 

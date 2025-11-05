@@ -31,10 +31,9 @@ pip install solana solders spl-token borsh-construct httpx
 
 ### 1. Update Configuration
 
-Edit `client.py` and update these values:
-```python
-PROGRAM_ID_STR = "YOUR_DEPLOYED_PROGRAM_ID"  # Replace with actual program ID
-```
+The client automatically loads the program ID from `../program_id.txt` (created during deployment). If the file doesn't exist, it falls back to a placeholder.
+
+For the Jupyter notebook, the program ID is loaded automatically from the deployment file.
 
 ### 2. Create Token Accounts
 

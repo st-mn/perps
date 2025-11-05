@@ -16,19 +16,23 @@ from dataclasses import dataclass
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed, Finalized
 from solana.rpc.types import TxOpts
-from solana.keypair import Keypair
-from solana.publickey import PublicKey
-from solana.system_program import SYS_PROGRAM_ID
-from solana.sysvar import SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY
-from solana.transaction import Transaction
-from solana.instruction import Instruction, AccountMeta
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
+from solders.system_program import ID as SYS_PROGRAM_ID
+from solders.sysvar import RENT as SYSVAR_RENT_PUBKEY, CLOCK as SYSVAR_CLOCK_PUBKEY
+from solders.transaction import Transaction
+from solders.instruction import Instruction, AccountMeta
 from spl.token.constants import TOKEN_PROGRAM_ID
 from spl.token.instructions import transfer, TransferParams
 from spl.token._layouts import ACCOUNT_LAYOUT
 import borsh_construct as borsh
 
-# Configuration
-PROGRAM_ID_STR = "YOUR_PROGRAM_ID_HERE"  # Replace with actual program ID
+# Load program ID dynamically from deployment file
+try:
+    with open("../program_id.txt", "r") as f:
+        PROGRAM_ID_STR = f.read().strip()
+except FileNotFoundError:
+    PROGRAM_ID_STR = "YOUR_PROGRAM_ID_HERE"  # Fallback if file doesn't exist
 PDA_SEED = b"perps"
 PRECISION = 1_000_000_000  # 1e9 precision for prices
 
@@ -41,7 +45,7 @@ INSTRUCTION_CLOSE_POSITION = 3
 # Borsh schemas for data serialization/deserialization
 @dataclass
 class Position:
-    owner: PublicKey
+    owner: Pubkey
     base_amount: int  # i64
     collateral: int   # u64
     last_funding_index: int  # i64
@@ -53,7 +57,7 @@ class Position:
         if len(data) < 64:
             raise ValueError("Invalid position data length")
         
-        owner = PublicKey(data[0:32])
+        owner = Pubkey(data[0:32])
         base_amount = struct.unpack('<q', data[32:40])[0]  # i64
         collateral = struct.unpack('<Q', data[40:48])[0]   # u64
         last_funding_index = struct.unpack('<q', data[48:56])[0]  # i64
@@ -92,35 +96,35 @@ class PerpetualsClient:
     def __init__(self, rpc_url: str, payer: Keypair, program_id: str):
         self.client = AsyncClient(rpc_url, commitment=Confirmed)
         self.payer = payer
-        self.program_id = PublicKey(program_id)
+        self.program_id = Pubkey.from_string(program_id)
         
     async def close(self):
         """Close the RPC client"""
         await self.client.close()
     
-    def get_program_authority(self) -> Tuple[PublicKey, int]:
+    def get_program_authority(self) -> Tuple[Pubkey, int]:
         """Get PDA for the program authority (vault)"""
-        return PublicKey.find_program_address([PDA_SEED], self.program_id)
+        return Pubkey.find_program_address([PDA_SEED], self.program_id)
     
-    def get_position_address(self, user: PublicKey) -> Tuple[PublicKey, int]:
+    def get_position_address(self, user: Pubkey) -> Tuple[Pubkey, int]:
         """Get PDA for a user's position account"""
-        return PublicKey.find_program_address([b"position", bytes(user)], self.program_id)
+        return Pubkey.find_program_address([b"position", bytes(user)], self.program_id)
     
-    def get_market_state_address(self) -> Tuple[PublicKey, int]:
+    def get_market_state_address(self) -> Tuple[Pubkey, int]:
         """Get PDA for the market state account"""
-        return PublicKey.find_program_address([b"market"], self.program_id)
+        return Pubkey.find_program_address([b"market"], self.program_id)
     
     async def open_position(
         self,
         base_delta: int,        # Position size change (signed)
         collateral_delta: int,  # Additional collateral
         entry_price: int,       # Entry price
-        user_token_account: PublicKey
+        user_token_account: Pubkey
     ) -> str:
         """Open or modify a position"""
         
         vault_pda, _ = self.get_program_authority()
-        position_pda, _ = self.get_position_address(self.payer.public_key)
+        position_pda, _ = self.get_position_address(self.payer.pubkey())
         market_state_pda, _ = self.get_market_state_address()
         
         # Create instruction data
@@ -131,7 +135,7 @@ class PerpetualsClient:
         instruction_data[17:25] = struct.pack('<Q', entry_price)   # u64
         
         accounts = [
-            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=self.payer.pubkey(), is_signer=True, is_writable=False),
             AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
             AccountMeta(pubkey=user_token_account, is_signer=False, is_writable=True),
             AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
@@ -188,8 +192,8 @@ class PerpetualsClient:
     
     async def liquidate(
         self,
-        position_owner: PublicKey,
-        liquidator_token_account: PublicKey
+        position_owner: Pubkey,
+        liquidator_token_account: Pubkey
     ) -> str:
         """Liquidate an undercollateralized position"""
         
@@ -200,7 +204,7 @@ class PerpetualsClient:
         instruction_data = bytes([INSTRUCTION_LIQUIDATE])
         
         accounts = [
-            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=self.payer.pubkey(), is_signer=True, is_writable=False),
             AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
             AccountMeta(pubkey=liquidator_token_account, is_signer=False, is_writable=True),
             AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
@@ -225,17 +229,17 @@ class PerpetualsClient:
         
         return response['result']
     
-    async def close_position(self, user_token_account: PublicKey) -> str:
+    async def close_position(self, user_token_account: Pubkey) -> str:
         """Close a position voluntarily"""
         
         vault_pda, _ = self.get_program_authority()
-        position_pda, _ = self.get_position_address(self.payer.public_key)
+        position_pda, _ = self.get_position_address(self.payer.pubkey())
         market_state_pda, _ = self.get_market_state_address()
         
         instruction_data = bytes([INSTRUCTION_CLOSE_POSITION])
         
         accounts = [
-            AccountMeta(pubkey=self.payer.public_key, is_signer=True, is_writable=False),
+            AccountMeta(pubkey=self.payer.pubkey(), is_signer=True, is_writable=False),
             AccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
             AccountMeta(pubkey=user_token_account, is_signer=False, is_writable=True),
             AccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
@@ -259,7 +263,7 @@ class PerpetualsClient:
         
         return response['result']
     
-    async def get_position(self, user: PublicKey) -> Optional[Position]:
+    async def get_position(self, user: Pubkey) -> Optional[Position]:
         """Get position data for a user"""
         
         position_pda, _ = self.get_position_address(user)
@@ -359,10 +363,10 @@ async def example_usage():
     
     try:
         print("🚀 Simple Perpetuals Python Client Example")
-        print(f"Wallet: {payer.public_key}")
+        print(f"Wallet: {payer.pubkey()}")
         
         # Example token account (replace with actual USDC token account)
-        user_token_account = PublicKey("REPLACE_WITH_ACTUAL_TOKEN_ACCOUNT")
+        user_token_account = Pubkey("REPLACE_WITH_ACTUAL_TOKEN_ACCOUNT")
         
         print("\n📊 Checking current market state...")
         market_state = await client.get_market_state()
@@ -393,7 +397,7 @@ async def example_usage():
             print(f"❌ Failed to update funding: {e}")
         
         print("\n👤 Checking position...")
-        position = await client.get_position(payer.public_key)
+        position = await client.get_position(payer.pubkey())
         if position:
             print(f"Position Size: {size_from_program(position.base_amount):.4f}")
             print(f"Collateral: {price_from_program(position.collateral):.2f}")
@@ -427,7 +431,7 @@ class PositionMonitor:
     def __init__(self, client: PerpetualsClient):
         self.client = client
     
-    async def monitor_liquidations(self, user_addresses: list[PublicKey]) -> list[PublicKey]:
+    async def monitor_liquidations(self, user_addresses: list[Pubkey]) -> list[Pubkey]:
         """Monitor positions for liquidation opportunities"""
         liquidatable = []
         
@@ -449,7 +453,7 @@ class PositionMonitor:
         
         return liquidatable
     
-    async def get_position_summary(self, user: PublicKey) -> Dict[str, Any]:
+    async def get_position_summary(self, user: Pubkey) -> Dict[str, Any]:
         """Get comprehensive position summary"""
         position = await self.client.get_position(user)
         if not position:
