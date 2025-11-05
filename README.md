@@ -112,7 +112,7 @@ Voluntarily closes a position and returns collateral.
 4. **Use WSL for all development**:
    - Always use WSL terminal for building and deploying
    - WSL Tunnel Extension if using VS Code
-   - Run `./scripts/1_build.sh` (not `scripts\build.bat`)
+   - Run `./scripts/1_build.sh`
 
 #### All Platforms
 
@@ -172,9 +172,6 @@ Voluntarily closes a position and returns collateral.
    
    # Unix/Mac/WSL (recommended for all platforms)
    ./scripts/1_build.sh
-   
-   # Windows (Direct - use only if WSL is not available)
-   scripts\build.bat
    ```
 
    **Note for Windows users**: Always prefer WSL environment for development.
@@ -183,18 +180,12 @@ Voluntarily closes a position and returns collateral.
    ```bash
    # Unix/Mac/WSL (recommended for all platforms)
    ./scripts/3_deploy.sh devnet
-   
-   # Windows (Direct - use only if WSL is not available)
-   scripts\deploy.bat devnet
    ```
 
 3. **Deploy to Mainnet**:
    ```bash
    # Unix/Mac/WSL (ensure you have sufficient SOL!)
    ./scripts/3_deploy.sh mainnet
-   
-   # Windows (Direct - use only if WSL is not available)
-   scripts\deploy.bat mainnet
    ```
 
 ## 💰 Economic Model
@@ -274,11 +265,9 @@ simple_perps/
 │   └── lib.rs              # Main program logic
 ├── scripts/
 │   ├── 1_build.sh         # Unix build script (includes env setup)
-│   ├── build.bat          # Windows build script
 │   ├── 2_getsol.sh        # Get SOL from faucet
-│   ├── 3_deploy.sh         # Unix deployment script
-│   ├── deploy.bat         # Windows deployment script
-│   ├── 4_runexample.sh    # Run example and setup
+│   ├── 3_deploy.sh        # Unix deployment script
+│   ├── 4_runexample.sh    # Run example test
 ├── Cargo.toml             # Rust dependencies
 └── README.md              # This file
 ```
