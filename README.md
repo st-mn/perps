@@ -140,6 +140,30 @@ Voluntarily closes a position and returns collateral.
    solana-keygen recover "prompt://?key=0"
    ```
 
+### Getting Test SOL for Devnet
+
+**Before deploying to devnet, you need test SOL. The official faucet has rate limits (2 requests per 8 hours).**
+
+1. **Automated Faucet Script** (Recommended):
+   ```bash
+   # Try multiple faucets automatically
+   ./scripts/get_sol.sh [amount]  # Default: 1 SOL
+   
+   # Examples:
+   ./scripts/get_sol.sh           # Get 1 SOL
+   ./scripts/get_sol.sh 2         # Get 2 SOL
+   ```
+
+2. **Manual Options**:
+   - **Official Faucet**: https://faucet.solana.com (rate limited)
+   - **SolFaucet**: https://solfaucet.com (manual interaction required)
+   - **Community Discord**: Ask in Solana communities
+
+3. **Check Your Balance**:
+   ```bash
+   solana balance
+   ```
+
 ### Build and Deploy
 
 1. **Clone and Build**:
