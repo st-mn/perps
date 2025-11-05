@@ -62,8 +62,8 @@ fi
 # Activate virtual environment and install requirements
 echo "📦 Installing Python dependencies..."
 source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+pip install --upgrade --quiet pip
+pip install --quiet -r requirements.txt
 echo "✅ Python dependencies installed"
 
 # Return to project root
