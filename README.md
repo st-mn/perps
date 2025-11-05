@@ -93,21 +93,17 @@ Voluntarily closes a position and returns collateral.
 
 ### Prerequisites
 
-#### Windows 
-**⚠️ Windows MUST use WSL (Windows Subsystem for Linux) and Docker for Solana development:**
+#### Windows
+**⚠️ Windows MUST use WSL (Windows Subsystem for Linux) for Solana development:**
 
-1. **Install Docker Desktop for Windows**:
-   - Download from: https://www.docker.com/products/docker-desktop
-   - Enable WSL integration in Docker Desktop settings
-
-2. **Install WSL**:
+1. **Install WSL**:
    ```cmd
    # Run as Administrator in Command Prompt or PowerShell
    wsl --install
    # Reboot if prompted
    ```
 
-3. **Setup development environment in WSL**:
+2. **Setup development environment in WSL**:
    ```bash
    # Open WSL terminal and run all subsequent commands in WSL
    sudo apt update && sudo apt install curl git build-essential

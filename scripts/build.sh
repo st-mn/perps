@@ -8,23 +8,7 @@ set -e
 # Check if running on Windows (WSL detection)
 if grep -qE "(Microsoft|WSL)" /proc/version 2>/dev/null; then
     echo "🪟 Windows WSL environment detected"
-    
-    # Check if Docker is available
-    if ! command -v docker &> /dev/null; then
-        echo "❌ Docker not found in WSL!"
-        echo ""
-        echo "📋 Windows Prerequisites for Solana Development:"
-        echo "   1. Install Docker Desktop for Windows"
-        echo "   2. Enable WSL integration in Docker Desktop settings"
-        echo "   3. Restart WSL: wsl --shutdown (from Windows)"
-        echo "   4. Re-enter WSL and run this script again"
-        echo ""
-        echo "💡 Alternative: Run 'docker --version' to test Docker availability"
-        exit 1
-    else
-        echo "✅ Docker is available in WSL"
-        docker --version
-    fi
+    echo "✅ WSL environment ready for Solana development"
 fi
 
 echo "🏗️  Building Solana Perpetuals Program with Dependencies..."
