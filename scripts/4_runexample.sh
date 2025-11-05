@@ -5,16 +5,25 @@
 
 set -e
 
-echo "🚀 Complete Solana Perpetuals Setup and Test"
-echo "=========================================="
+echo "🚀 Complete Solana Perpetuals Smart Contract Test and Demo"
+echo "==========================================================="
+
+# Test the program first
+echo "Testing Smart Contract program client functionality..."
+cd example
+source venv/bin/activate
+python -m pytest client.py -v --no-header
+
 
 # Check if deployed
-if [ ! -f "example/program_id.txt" ]; then
+if [ ! -f "program_id.txt" ]; then
     echo "❌ Program not deployed. Run ./scripts/3_deploy.sh devnet first."
     exit 1
 fi
 
-PROGRAM_ID=$(cat example/program_id.txt)
+echo ""
+echo "1️⃣  Checking deployed Smart Contract program and demonstrating example usage..."
+PROGRAM_ID=$(cat program_id.txt)
 echo "✅ Program deployed: $PROGRAM_ID"
 
 # Check balance
@@ -30,9 +39,13 @@ if (( $(echo "$BALANCE < $REQUIRED_SOL" | bc -l) )); then
     exit 1
 fi
 
+
+python client.py
+cd ..
+
 # Setup token accounts
 echo ""
-echo "1️⃣ Setting up token accounts..."
+echo "2️⃣  Setting up token accounts..."
 if [ ! -f "example/token_accounts.txt" ]; then
     # Devnet token mints
     USDC_MINT="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # Devnet USDC
@@ -64,27 +77,35 @@ fi
 
 # Load token accounts
 source example/token_accounts.txt
-echo "🪙 USDC: $USDC"
-echo "🪙 USDT: $USDT"
+echo " USDC: $USDC"
+echo " USDT: $USDT"
 
 # Initialize market
 echo ""
-echo "2️⃣ Initializing market state..."
+echo "3️⃣  Initializing market state..."
 echo "📊 Checking market state..."
-MARKET_STATE_EXISTS=$(solana account $PROGRAM_ID --output json 2>/dev/null | jq -r '.account.owner' 2>/dev/null || echo "none")
-
-if [ "$MARKET_STATE_EXISTS" != "none" ]; then
+# Calculate market state PDA: find_program_address([b"market"], program_id)
+MARKET_STATE_PDA="4aJnePhWkLdgaxgH5RdgPJ1AGo61Sog1jVMqKRSB46WY"
+if solana account $MARKET_STATE_PDA --output json >/dev/null 2>&1; then
     echo "✅ Market state already exists!"
     echo "🎯 Market is ready for trading."
 else
     echo "🏛️  Market state not found. Initializing market by opening first position..."
 
-    # Use Python client to initialize market
-    python3 -c "
+    # Check if USDC account has sufficient balance
+    usdc_balance=$(spl-token balance "$USDC" 2>/dev/null || echo "0")
+    if (( $(echo "$usdc_balance < 1" | bc -l 2>/dev/null || echo "1") )); then
+        echo "⚠️  USDC token account is empty ($usdc_balance USDC). Skipping market initialization."
+        echo "💡 To initialize the market please fund your USDC token account with devnet USDC."
+    else
+        # Use Python client to initialize market
+        cd example
+        source venv/bin/activate
+        python3 - "$PROGRAM_ID" << 'EOF'
 import asyncio
 import sys
 import os
-sys.path.append('example')
+sys.path.append('.')
 
 from client import PerpetualsClient
 from solders.keypair import Keypair
@@ -96,7 +117,7 @@ async def init_market():
     print(f'🔑 Wallet: {payer.pubkey()}')
 
     # Load token accounts
-    with open('example/token_accounts.txt', 'r') as f:
+    with open('token_accounts.txt', 'r') as f:
         lines = f.readlines()
         usdc_account = None
         for line in lines:
@@ -111,7 +132,7 @@ async def init_market():
     print(f'🪙 Using USDC account: {usdc_account}')
 
     # Create client
-    client = PerpetualsClient('https://api.devnet.solana.com', payer, '$PROGRAM_ID')
+    client = PerpetualsClient('https://api.devnet.solana.com', payer, sys.argv[1])
 
     try:
         # Open a tiny position to initialize market (0.000001 base, 1000 collateral, price 50000)
@@ -120,7 +141,7 @@ async def init_market():
             base_delta=1000,  # 0.000001 base (1e9 precision)
             collateral_delta=1000000,  # 1 USDC (6 decimals)
             entry_price=50000000000,  # \$50,000 (1e9 precision)
-            user_token_account=Pubkey(usdc_account)
+            user_token_account=Pubkey.from_string(usdc_account)
         )
         print(f'✅ Market initialized! TX: {tx}')
 
@@ -134,32 +155,16 @@ async def init_market():
         await client.close()
 
 asyncio.run(init_market())
-"
+EOF
+    cd ..
 
     echo "✅ Market initialization complete!"
     echo "🎯 The market is now ready for trading."
+    fi
+
+echo ""
+echo "✅ Setup and testing complete for your Perpetuals program and accounts."
+echo "📄   Program ID: $PROGRAM_ID"
+echo "📄   USDC Account: $USDC"
+echo "📄   USDT Account: $USDT"
 fi
-
-# Test the program
-echo ""
-echo "3️⃣ Testing program functionality..."
-cd example
-source venv/bin/activate
-echo "Running client demo and tests..."
-python client.py
-cd ..
-
-echo ""
-echo "✅ Setup and testing complete!"
-echo ""
-echo "🎯 Your perpetuals program is ready!"
-echo ""
-echo "📚 Next steps:"
-echo "   1. Run the client demo: cd example && python client.py"
-echo "   2. Update USER_TOKEN_ACCOUNT with your USDC token account"
-echo "   3. Run through the tutorial cells to test trading"
-echo ""
-echo "📄 Your accounts:"
-echo "   Program ID: $PROGRAM_ID"
-echo "   USDC Account: $USDC"
-echo "   USDT Account: $USDT"

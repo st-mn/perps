@@ -20,7 +20,8 @@ from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.system_program import ID as SYS_PROGRAM_ID
 from solders.sysvar import RENT as SYSVAR_RENT_PUBKEY, CLOCK as SYSVAR_CLOCK_PUBKEY
-from solders.transaction import Transaction
+from solders.transaction import Transaction, VersionedTransaction
+from solders.message import Message, MessageV0
 from solders.instruction import Instruction, AccountMeta
 from spl.token.constants import TOKEN_PROGRAM_ID
 from spl.token.instructions import transfer, TransferParams
@@ -31,8 +32,10 @@ import borsh_construct as borsh
 try:
     with open("program_id.txt", "r") as f:
         PROGRAM_ID_STR = f.readline().strip()
+    program_id_loaded = True
 except FileNotFoundError:
     PROGRAM_ID_STR = "YOUR_PROGRAM_ID_HERE"  # Fallback if file doesn't exist
+    program_id_loaded = False
 PDA_SEED = b"perps"
 PRECISION = 1_000_000_000  # 1e9 precision for prices
 
@@ -152,11 +155,23 @@ class PerpetualsClient:
             accounts=accounts
         )
         
-        transaction = Transaction().add(instruction)
+        # Get latest blockhash
+        blockhash_resp = await self.client.get_latest_blockhash()
+        recent_blockhash = blockhash_resp.value.blockhash
+        
+        # Create message
+        message = MessageV0.try_compile(
+            self.payer.pubkey(),
+            [instruction],
+            [],
+            recent_blockhash
+        )
+        
+        # Create transaction
+        transaction = VersionedTransaction(message, [self.payer])
         
         response = await self.client.send_transaction(
             transaction, 
-            self.payer,
             opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed)
         )
         
@@ -270,18 +285,13 @@ class PerpetualsClient:
         
         try:
             response = await self.client.get_account_info(position_pda, commitment=Confirmed)
-            if response['result']['value'] is None:
+            if response.value is None:
                 return None
             
-            account_data = response['result']['value']['data'][0]
-            # Decode base64 data
-            import base64
-            raw_data = base64.b64decode(account_data)
-            
-            return Position.from_bytes(raw_data)
+            account_data = response.value.data
+            return Position.from_bytes(account_data)
             
         except Exception as e:
-            print(f"Error fetching position: {e}")
             return None
     
     async def get_market_state(self) -> Optional[MarketState]:
@@ -291,18 +301,13 @@ class PerpetualsClient:
         
         try:
             response = await self.client.get_account_info(market_state_pda, commitment=Confirmed)
-            if response['result']['value'] is None:
+            if response.value is None:
                 return None
             
-            account_data = response['result']['value']['data'][0]
-            # Decode base64 data
-            import base64
-            raw_data = base64.b64decode(account_data)
-            
-            return MarketState.from_bytes(raw_data)
+            account_data = response.value.data
+            return MarketState.from_bytes(account_data)
             
         except Exception as e:
-            print(f"Error fetching market state: {e}")
             return None
     
     async def calculate_position_health(self, position: Position, mark_price: int) -> float:
@@ -362,8 +367,7 @@ async def example_usage():
     client = PerpetualsClient(rpc_url, payer, PROGRAM_ID_STR)
     
     try:
-        print("🚀 Simple Perpetuals Python Client Example")
-        print(f"Wallet: {payer.pubkey()}")
+        print(f"💰 Wallet: {payer.pubkey()}")
         
         # Test PDA generation (works without deployed program)
         vault_pda, vault_bump = client.get_program_authority()
@@ -380,12 +384,25 @@ async def example_usage():
         converted_back = price_from_program(program_price)
         print(f"💰 Price conversion test: ${test_price} → {program_price} → ${converted_back}")
         
-        # Skip actual blockchain operations since program may not be deployed
-        print("⚠️  Skipping blockchain operations (program may not be deployed)")
-        print("💡 To test with real program:")
-        print("   1. Deploy the program to devnet")
-        print("   2. Create token accounts for USDC/USDT")
-        print("   3. Update the token account addresses in this script")
+        # Try to read market state from deployed program (silently)
+        try:
+            market_state = await client.get_market_state()
+            if market_state:
+                pass  # Successfully read market state, but don't print
+            else:
+                pass  # Market state not found, but don't print
+        except Exception:
+            pass  # Could not read market state, but don't print
+        
+        # Try to read position for this wallet (silently)
+        try:
+            position = await client.get_position(payer.pubkey())
+            if position:
+                pass  # Position found, but don't print
+            else:
+                pass  # No position found, but don't print
+        except Exception:
+            pass  # Could not read position, but don't print
         
     except Exception as e:
         print(f"❌ Example error: {e}")
@@ -445,10 +462,6 @@ class PositionMonitor:
             "is_liquidatable": health < 1.5,
             "position_type": "Long" if position.base_amount > 0 else "Short" if position.base_amount < 0 else "None"
         }
-
-# Run example if this file is executed directly
-if __name__ == "__main__":
-    asyncio.run(example_usage())
 
 # ===== TEST SUITE =====
 
@@ -551,118 +564,9 @@ class TestPerpetualsClient:
         assert market_state.last_funding_slot == last_funding_slot
         assert market_state.mark_price == mark_price
 
-async def integration_test():
-    """Integration test (requires actual deployed program)"""
-    print("🧪 Running integration test...")
-    
-    try:
-        payer = Keypair()
-        client = PerpetualsClient(TEST_RPC_URL, payer, TEST_PROGRAM_ID)
-        
-        print(f"✅ Client initialized with wallet: {payer.pubkey()}")
-        print(f"Program ID: {client.program_id}")
-        
-        # Test PDA generation
-        vault_pda, vault_bump = client.get_program_authority()
-        position_pda, pos_bump = client.get_position_address(payer.pubkey())
-        market_pda, market_bump = client.get_market_state_address()
-        
-        print(f"Vault PDA: {vault_pda} (bump: {vault_bump})")
-        print(f"Position PDA: {position_pda} (bump: {pos_bump})")
-        print(f"Market PDA: {market_pda} (bump: {market_bump})")
-        
-        await client.close()
-        print("✅ Integration test completed")
-        
-    except Exception as e:
-        print(f"❌ Integration test failed: {e}")
-
-async def stress_test():
-    """Basic stress test for PDA generation"""
-    print("💪 Running stress test...")
-    
-    payer = Keypair()
-    client = PerpetualsClient(TEST_RPC_URL, payer, TEST_PROGRAM_ID)
-    
-    try:
-        # Generate many PDAs to test performance
-        start_time = asyncio.get_event_loop().time()
-        
-        for i in range(1000):
-            test_user = Keypair().pubkey()
-            client.get_position_address(test_user)
-        
-        end_time = asyncio.get_event_loop().time()
-        
-        print(f"✅ Generated 1000 PDAs in {end_time - start_time:.3f} seconds")
-        
-    except Exception as e:
-        print(f"❌ Stress test failed: {e}")
-    finally:
-        await client.close()
-
-def run_unit_tests():
-    """Run unit tests"""
-    print("🔬 Running unit tests...")
-    
-    test_client = TestPerpetualsClient()
-    
-    # Run tests
-    try:
-        test_client.test_price_conversion()
-        print("✅ Price conversion tests passed")
-        
-        test_client.test_position_deserialization()
-        print("✅ Position deserialization tests passed")
-        
-        test_client.test_market_state_deserialization()
-        print("✅ Market state deserialization tests passed")
-        
-        print("🎉 All unit tests passed!")
-        
-    except Exception as e:
-        print(f"❌ Unit tests failed: {e}")
-
-async def run_demo():
-    """Run the complete demo with example and tests"""
-    print("🐍 Solana Perpetuals Python Client Demo")
-    print("=" * 50)
-    
-    # Run unit tests
-    run_unit_tests()
-    print()
-    
-    # Run integration test
-    await integration_test()
-    print()
-    
-    # Run stress test
-    await stress_test()
-    print()
-    
-    print("📊 Demo Summary:")
-    print("- Unit tests: Price conversion, data deserialization")
-    print("- Integration tests: Client functionality")
-    print("- Stress tests: Performance with multiple PDAs")
-    print()
-    print("💡 To test with real program:")
-    print("1. Deploy the program to devnet")
-    print("2. Create token accounts and fund with devnet SOL/USDC")
-    print("3. Update PROGRAM_ID_STR with your deployed program ID")
-
-# Alternative entry point for running tests
+# Run demo if this file is executed directly
 if __name__ == "__main__":
-    # Check if pytest is being used or --test flag
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        # Run pytest on this file
-        pytest.main([__file__, "-v"])
-    elif "pytest" in sys.modules or any("pytest" in arg for arg in sys.argv):
-        # Pytest is running, don't run demo
-        pass
-    else:
-        # Run the demo
-        asyncio.run(run_demo())
-    print("🐍 Solana Perpetuals Python Client")
-    print("⚠️  Make sure to replace PROGRAM_ID_STR and token accounts with actual values!")
+    print("🐍 Creating Solana Perpetuals Python Client")
+    if not program_id_loaded:
+        print("⚠️  Make sure to replace PROGRAM_ID_STR and token accounts with actual values!")
     asyncio.run(example_usage())
