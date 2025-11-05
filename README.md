@@ -112,7 +112,7 @@ Voluntarily closes a position and returns collateral.
 4. **Use WSL for all development**:
    - Always use WSL terminal for building and deploying
    - WSL Tunnel Extension if using VS Code
-   - Run `./scripts/build.sh` (not `scripts\build.bat`)
+   - Run `./scripts/1_build.sh` (not `scripts\build.bat`)
 
 #### All Platforms
 
@@ -147,11 +147,11 @@ Voluntarily closes a position and returns collateral.
 1. **Automated Faucet Script** (Recommended):
    ```bash
    # Try multiple faucets automatically
-   ./scripts/get_sol.sh [amount]  # Default: 1 SOL
+   ./scripts/2_getsol.sh [amount]  # Default: 1 SOL
    
    # Examples:
-   ./scripts/get_sol.sh           # Get 1 SOL
-   ./scripts/get_sol.sh 2         # Get 2 SOL
+   ./scripts/2_getsol.sh           # Get 1 SOL
+   ./scripts/2_getsol.sh 2         # Get 2 SOL
    ```
 
 2. **Manual Options**:
@@ -171,7 +171,7 @@ Voluntarily closes a position and returns collateral.
    cd simple_perps
    
    # Unix/Mac/WSL (recommended for all platforms)
-   ./scripts/build.sh
+   ./scripts/1_build.sh
    
    # Windows (Direct - use only if WSL is not available)
    scripts\build.bat
@@ -182,7 +182,7 @@ Voluntarily closes a position and returns collateral.
 2. **Deploy to Devnet**:
    ```bash
    # Unix/Mac/WSL (recommended for all platforms)
-   ./scripts/deploy.sh devnet
+   ./scripts/3_deploy.sh devnet
    
    # Windows (Direct - use only if WSL is not available)
    scripts\deploy.bat devnet
@@ -191,7 +191,7 @@ Voluntarily closes a position and returns collateral.
 3. **Deploy to Mainnet**:
    ```bash
    # Unix/Mac/WSL (ensure you have sufficient SOL!)
-   ./scripts/deploy.sh mainnet
+   ./scripts/3_deploy.sh mainnet
    
    # Windows (Direct - use only if WSL is not available)
    scripts\deploy.bat mainnet
@@ -261,7 +261,7 @@ cargo test
 solana airdrop 2
 
 # Deploy program
-./scripts/deploy.sh devnet
+./scripts/3_deploy.sh devnet
 
 # Test with client integration
 ```
@@ -273,10 +273,12 @@ simple_perps/
 ├── src/
 │   └── lib.rs              # Main program logic
 ├── scripts/
-│   ├── build.sh           # Unix build script
+│   ├── 1_build.sh         # Unix build script (includes env setup)
 │   ├── build.bat          # Windows build script
-│   ├── deploy.sh          # Unix deployment script
-│   └── deploy.bat         # Windows deployment script
+│   ├── 2_getsol.sh        # Get SOL from faucet
+│   ├── 3_deploy.sh         # Unix deployment script
+│   ├── deploy.bat         # Windows deployment script
+│   ├── 4_runexample.sh    # Run example and setup
 ├── Cargo.toml             # Rust dependencies
 └── README.md              # This file
 ```

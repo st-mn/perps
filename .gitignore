@@ -6,7 +6,7 @@ Cargo.lock
 
 # Solana
 /test-ledger/
-program_id.txt
+example/program_id.txt
 program_deployed.txt
 
 # IDE files
@@ -59,13 +59,13 @@ temp-*.json
 ehthumbs.db
 Thumbs.db
 
-# Node.js (for examples)
+# Node.js (for example)
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Python (for examples)
+# Python (for example)
 __pycache__/
 *.py[cod]
 *$py.class
@@ -123,3 +123,4 @@ solana-release.tar.bz2
 solana-release/
 solana-cli-extracted/
 deploy_output.txt
+example/token_accounts.txt

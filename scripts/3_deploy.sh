@@ -12,7 +12,7 @@ echo "🚀 Deploying Solana Perpetuals Program to $NETWORK..."
 
 # Check if program is built
 if [ ! -f "target/deploy/simple_perps.so" ]; then
-    echo "❌ Program not built. Run ./scripts/build.sh first."
+    echo "❌ Program not built. Run ./scripts/1_build.sh first."
     exit 1
 fi
 
@@ -67,8 +67,8 @@ if [ "$PROGRAM_ID" != "null" ] && [ -n "$PROGRAM_ID" ]; then
     echo "🌐 Network: $NETWORK"
     
     # Save program ID to file
-    echo "$PROGRAM_ID" > program_id.txt
-    echo "💾 Program ID saved to program_id.txt"
+    echo "$PROGRAM_ID" > example/program_id.txt
+    echo "💾 Program ID saved to example/program_id.txt"
     
     # Show program info
     echo ""

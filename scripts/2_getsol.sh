@@ -114,12 +114,11 @@ done
 # Try community faucets (if they have APIs)
 echo "🔄 Trying community faucets..."
 
-# SolFaucet API attempt (if available)
-echo "🔄 Trying SolFaucet API..."
+# SolFaucet API attempt (if available) - silent
 # Note: SolFaucet requires manual interaction, but let's try if they have an API
 curl -s "https://solfaucet.com/api/airdrop" \
     -H "Content-Type: application/json" \
-    -d "{\"address\":\"$WALLET_ADDRESS\",\"amount\":$AMOUNT}" 2>/dev/null || echo "❌ SolFaucet API not available"
+    -d "{\"address\":\"$WALLET_ADDRESS\",\"amount\":$AMOUNT}" >/dev/null 2>&1 || true
 
 # Try smaller amounts
 echo ""
@@ -150,4 +149,4 @@ echo "   4. Ask in Solana Discord communities"
 echo "   5. Use a different wallet with existing devnet SOL"
 echo ""
 echo "🎯 Once you have SOL, deploy with:"
-echo "   ./scripts/deploy.sh devnet"
+echo "   ./scripts/3_deploy.sh devnet"
