@@ -5,6 +5,28 @@
 
 set -e
 
+# Check if running on Windows (WSL detection)
+if grep -qE "(Microsoft|WSL)" /proc/version 2>/dev/null; then
+    echo "🪟 Windows WSL environment detected"
+    
+    # Check if Docker is available
+    if ! command -v docker &> /dev/null; then
+        echo "❌ Docker not found in WSL!"
+        echo ""
+        echo "📋 Windows Prerequisites for Solana Development:"
+        echo "   1. Install Docker Desktop for Windows"
+        echo "   2. Enable WSL integration in Docker Desktop settings"
+        echo "   3. Restart WSL: wsl --shutdown (from Windows)"
+        echo "   4. Re-enter WSL and run this script again"
+        echo ""
+        echo "💡 Alternative: Run 'docker --version' to test Docker availability"
+        exit 1
+    else
+        echo "✅ Docker is available in WSL"
+        docker --version
+    fi
+fi
+
 echo "🏗️  Building Solana Perpetuals Program with Dependencies..."
 
 # Check if Rust is installed
@@ -32,50 +54,34 @@ echo "📦 Installing Rust components..."
 rustup component add rust-src
 rustup target add bpf-unknown-unknown || echo "⚠️  BPF target installation may have failed, continuing..."
 
-# Initialize Solana toolchain
-echo "📦 Initializing Solana toolchain..."
-solana install init || echo "⚠️  Solana init may have failed, continuing..."
+# Initialize Solana toolchain (skip if already initialized)
+echo "📦 Checking Solana toolchain..."
+solana --version || echo "⚠️  Solana CLI not properly configured, continuing..."
 
 # Update Rust toolchain
 echo "🔄 Updating Rust toolchain..."
 rustup update stable
-
-# Check if cargo-build-bpf is available
-if ! command -v cargo-build-bpf &> /dev/null; then
-    echo "📦 Installing Solana BPF toolchain..."
-    cargo install --git https://github.com/solana-labs/solana solana-install-init --tag v1.18.0 || echo "⚠️  cargo-build-bpf installation may have failed, continuing..."
-else
-    echo "✅ cargo-build-bpf already available"
-fi
 
 # Create target directory if it doesn't exist
 mkdir -p target/deploy
 
 # Build the program
 echo "🔨 Compiling program..."
-echo "Attempting build with cargo-build-bpf..."
-cargo build-bpf --manifest-path Cargo.toml --bpf-out-dir target/deploy
+echo "Attempting build with cargo-build-sbf..."
+cargo build-sbf --manifest-path Cargo.toml --sbf-out-dir target/deploy
 
 if [ $? -ne 0 ]; then
-    echo "⚠️  cargo-build-bpf failed, trying alternative build method..."
-    echo "🔨 Attempting build with cargo build-sbf..."
-    cargo build-sbf --manifest-path Cargo.toml --sbf-out-dir target/deploy
+    echo "⚠️  cargo build-sbf failed, trying alternative build method..."
+    echo "🔨 Attempting standard cargo build..."
+    cargo build --release --target bpf-unknown-unknown
     
     if [ $? -ne 0 ]; then
-        echo "⚠️  cargo build-sbf failed, trying standard Solana build..."
-        echo "🔨 Attempting standard cargo build..."
-        cargo build --release --target bpf-unknown-unknown
-        
-        if [ $? -ne 0 ]; then
-            echo "❌ All build methods failed!"
-            echo "💡 Try running these commands manually:"
-            echo "   1. rustup update stable"
-            echo "   2. rustup component add rust-src"
-            echo "   3. rustup target add bpf-unknown-unknown"
-            echo "   4. solana install init"
-            echo "   5. cargo build-bpf"
-            exit 1
-        fi
+        echo "❌ All build methods failed!"
+        echo "💡 Try running these commands manually:"
+        echo "   1. rustup update stable"
+        echo "   2. rustup component add rust-src"
+        echo "   3. cargo build-sbf"
+        exit 1
     fi
 fi
 
@@ -85,17 +91,10 @@ if [ -f "target/deploy/simple_perps.so" ]; then
     echo "📄 Program binary: target/deploy/simple_perps.so"
     SIZE=$(stat -f%z target/deploy/simple_perps.so 2>/dev/null || stat -c%s target/deploy/simple_perps.so 2>/dev/null || echo "unknown")
     echo "📊 Binary size: ${SIZE} bytes"
-elif [ -f "target/bpf-unknown-unknown/release/simple_perps.so" ]; then
-    echo "✅ Build successful!"
-    echo "📄 Program binary: target/bpf-unknown-unknown/release/simple_perps.so"
-    mkdir -p target/deploy
-    cp target/bpf-unknown-unknown/release/simple_perps.so target/deploy/simple_perps.so
-    SIZE=$(stat -f%z target/deploy/simple_perps.so 2>/dev/null || stat -c%s target/deploy/simple_perps.so 2>/dev/null || echo "unknown")
-    echo "📊 Binary size: ${SIZE} bytes"
 else
     echo "❌ Build completed but binary not found!"
     echo "🔍 Searching for compiled binaries..."
-    find . -name "*.so" -type f
+    find target -name "*.so" -type f 2>/dev/null || echo "No .so files found"
     exit 1
 fi
 

@@ -2,6 +2,32 @@
 REM Windows build script for Solana Perpetuals Program with auto-installation
 
 echo [BUILD] Building Solana Perpetuals Program with Dependencies...
+echo.
+echo [INFO] Windows Prerequisites Check:
+echo   - Docker Desktop must be installed and running
+echo   - WSL must be installed and configured
+echo   - It's recommended to run development in WSL environment
+echo.
+
+REM Check if Docker is available
+where docker >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Docker not found in PATH!
+    echo.
+    echo [PREREQ] Windows Development Prerequisites:
+    echo   1. Install Docker Desktop for Windows from: https://www.docker.com/products/docker-desktop
+    echo   2. Install WSL: wsl --install ^(run as Administrator^)
+    echo   3. Enable WSL integration in Docker Desktop settings
+    echo   4. Recommended: Use WSL for development instead of Windows directly
+    echo      - Open WSL terminal: wsl
+    echo      - Run: ./scripts/build.sh
+    echo.
+    pause
+    exit /b 1
+) else (
+    echo [OK] Docker found in PATH
+    docker --version
+)
 
 REM Check if Rust is installed by looking for rustup directory
 if exist "%USERPROFILE%\.cargo" (

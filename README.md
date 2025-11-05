@@ -93,12 +93,39 @@ Voluntarily closes a position and returns collateral.
 
 ### Prerequisites
 
+#### Windows 
+**⚠️ Windows MUST use WSL (Windows Subsystem for Linux) and Docker for Solana development:**
+
+1. **Install Docker Desktop for Windows**:
+   - Download from: https://www.docker.com/products/docker-desktop
+   - Enable WSL integration in Docker Desktop settings
+
+2. **Install WSL**:
+   ```cmd
+   # Run as Administrator in Command Prompt or PowerShell
+   wsl --install
+   # Reboot if prompted
+   ```
+
+3. **Setup development environment in WSL**:
+   ```bash
+   # Open WSL terminal and run all subsequent commands in WSL
+   sudo apt update && sudo apt install curl git build-essential
+   ```
+
+4. **Use WSL for all development**:
+   - Always use WSL terminal for building and deploying
+   - WSL Tunnel Extension if using VS Code
+   - Run `./scripts/build.sh` (not `scripts\build.bat`)
+
+#### All Platforms
+
 1. **Install Solana CLI**:
    ```bash
-   # Unix/Mac
+   # Unix/Mac/WSL
    sh -c "$(curl -sSfL https://release.solana.com/v1.18.0/install)"
    
-   # Windows
+   # Windows (Direct - NOT recommended, use WSL instead)
    # Download and run: https://release.solana.com/v1.18.0/solana-install-init-x86_64-pc-windows-msvc.exe
    ```
 
@@ -123,28 +150,30 @@ Voluntarily closes a position and returns collateral.
    ```bash
    cd simple_perps
    
-   # Unix/Mac
+   # Unix/Mac/WSL (recommended for all platforms)
    ./scripts/build.sh
    
-   # Windows
+   # Windows (Direct - use only if WSL is not available)
    scripts\build.bat
    ```
 
+   **Note for Windows users**: Always prefer WSL environment for development.
+
 2. **Deploy to Devnet**:
    ```bash
-   # Unix/Mac
+   # Unix/Mac/WSL (recommended for all platforms)
    ./scripts/deploy.sh devnet
    
-   # Windows
+   # Windows (Direct - use only if WSL is not available)
    scripts\deploy.bat devnet
    ```
 
 3. **Deploy to Mainnet**:
    ```bash
-   # Unix/Mac (ensure you have sufficient SOL!)
+   # Unix/Mac/WSL (ensure you have sufficient SOL!)
    ./scripts/deploy.sh mainnet
    
-   # Windows
+   # Windows (Direct - use only if WSL is not available)
    scripts\deploy.bat mainnet
    ```
 

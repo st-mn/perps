@@ -10,7 +10,7 @@ repository = "https://github.com/st-mn/perps"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-program = "1.18.0"
+solana-program = { version = "1.18.0", features = ["default"] }
 borsh = "0.10"
 
 [features]
