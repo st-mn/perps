@@ -52,23 +52,25 @@ echo "2️⃣ Initializing market state..."
 # Test the program
 echo ""
 echo "3️⃣ Testing program functionality..."
+cd examples
+source venv/bin/activate
 python3 -c "
 import asyncio
 import sys
 import os
-sys.path.append('examples')
+sys.path.append('.')
 
 from client import PerpetualsClient
-from solana.keypair import Keypair
-from solana.publickey import PublicKey
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
 
 async def test_program():
     # Load keypair
-    payer = Keypair.from_secret_key_file('~/.config/solana/id.json')
-    print(f'🔑 Wallet: {payer.public_key}')
+    payer = Keypair()
+    print(f'🔑 Wallet: {payer.pubkey()}')
 
     # Load token accounts
-    with open('token_accounts.txt', 'r') as f:
+    with open('../token_accounts.txt', 'r') as f:
         lines = f.readlines()
         usdc_account = None
         for line in lines:
@@ -90,7 +92,7 @@ async def test_program():
             base_delta=1000000,  # 0.001 base
             collateral_delta=1000000,  # 1 USDC
             entry_price=50000000000,  # \$50,000
-            user_token_account=PublicKey(usdc_account)
+            user_token_account=Pubkey(usdc_account)
         )
         print(f'✅ Position opened! TX: {tx}')
 
@@ -111,6 +113,7 @@ async def test_program():
 
 asyncio.run(test_program())
 "
+cd ..
 
 echo ""
 echo "✅ Setup and testing complete!"

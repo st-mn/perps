@@ -42,6 +42,34 @@ rustup target add bpf-unknown-unknown || echo "⚠️  BPF target installation m
 echo "📦 Checking Solana toolchain..."
 solana --version || echo "⚠️  Solana CLI not properly configured, continuing..."
 
+# Check if Python is installed
+if ! command -v python3 &> /dev/null; then
+    echo "📦 Installing Python3..."
+    sudo apt update && sudo apt install -y python3 python3-venv python3-pip
+    echo "✅ Python3 installed successfully"
+else
+    echo "✅ Python3 already installed"
+fi
+
+# Set up Python virtual environment for examples
+echo "🐍 Setting up Python virtual environment..."
+cd examples
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+    echo "✅ Virtual environment created"
+fi
+
+# Activate virtual environment and install requirements
+echo "📦 Installing Python dependencies..."
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+echo "✅ Python dependencies installed"
+
+# Return to project root
+cd ..
+echo "✅ Python environment ready"
+
 # Update Rust toolchain
 echo "🔄 Updating Rust toolchain..."
 rustup update stable
@@ -83,4 +111,7 @@ else
 fi
 
 echo ""
-echo "🚀 Ready to deploy! Run ./scripts/deploy.sh to deploy to Solana."
+echo "🚀 Ready to deploy and test!"
+echo "📋 Next steps:"
+echo "   1. Run ./scripts/deploy.sh to deploy to Solana"
+echo "   2. Run ./scripts/test_setup.sh for complete setup and testing"
