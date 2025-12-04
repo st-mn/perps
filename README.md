@@ -94,7 +94,7 @@ Voluntarily closes a position and returns collateral.
 ### Prerequisites
 
 #### Windows
-**⚠️ Windows MUST use WSL (Windows Subsystem for Linux) for Solana development:**
+**⚠️ Windows MUST use WSL (Windows Subsystem for Linux) for Solana development:** VSCODE> Connect WSL
 
 1. **Install WSL**:
    ```cmd
